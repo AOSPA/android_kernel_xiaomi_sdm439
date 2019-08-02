@@ -679,4 +679,4 @@ dtb-$(CONFIG_ARCH_SDM845_VM) += sdm845-vm.dtb
 
 always		:= $(dtb-y)
 subdir-y	:= $(dts-dirs)
-clean-files	:= *.dtb
+clean-files	:= *.dtb *.dtbo
