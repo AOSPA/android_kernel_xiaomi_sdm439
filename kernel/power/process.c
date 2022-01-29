@@ -28,6 +28,8 @@
  */
 unsigned int __read_mostly freeze_timeout_msecs = 20 * MSEC_PER_SEC;
 
+#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
+
 static int try_to_freeze_tasks(bool user_only)
 {
 	struct task_struct *g, *p;
@@ -190,33 +192,17 @@ int freeze_kernel_threads(void)
 void thaw_fingerprintd(void)
 {
 	struct task_struct *p;
-	bool fp_hidl_thawed, gx_fpd_thawed = false;
+	const char Name[] = "android.hardware.biometrics.fingerprint";
+	const size_t szName = sizeof(Name) - 1;
 
 	pm_freezing = false;
 	pm_nosig_freezing = false;
 
 	read_lock(&tasklist_lock);
 	for_each_process(p) {
-		if (fp_hidl_thawed && gx_fpd_thawed)
+	  if (!strncmp(p->comm, Name, MIN(strlen(p->comm), szName))) {
+			__thaw_task(p);
 			break;
-		if (!fp_hidl_thawed) {
-			if ((!memcmp(p->comm, "android.hardware.biometrics.fingerprint@2.1-service", 52)) ||
-				(!memcmp(p->comm,"android.hardware.biometrics.fingerprint@2.1-service.xiaomi_mi439", 65)) ||
-				(!memcmp(p->comm,"android.hardware.biometrics.fingerprint@2.1-service.xiaomi_ulysse", 66)) ||
-				(!memcmp(p->comm,"android.hardware.biometrics.fingerprint@2.1-service.xiaomi_wt8937", 66))) {
-				__thaw_task(p);
-				fp_hidl_thawed = true;
-				continue;
-			}
-		}
-		if (!gx_fpd_thawed) {
-			if ((!memcmp(p->comm, "gx_fpd", 7)) ||
-				(!memcmp(p->comm,"land_gx_fpd", 12)) ||
-				(!memcmp(p->comm,"santoni_gx_fpd", 15))) {
-				__thaw_task(p);
-				gx_fpd_thawed = true;
-				continue;
-			}
 		}
 	}
 	read_unlock(&tasklist_lock);
