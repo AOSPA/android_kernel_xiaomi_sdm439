@@ -862,7 +862,6 @@ source "drivers/misc/echo/Kconfig"
 source "drivers/misc/cxl/Kconfig"
 source "drivers/misc/hqsysfs/Kconfig"
 source "drivers/misc/fpr_FingerprintCard/Kconfig"
-source "drivers/misc/xiaomi_fs/Kconfig"
 source "drivers/misc/goodix/Kconfig"
 endmenu
 
