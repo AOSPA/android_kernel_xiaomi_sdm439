@@ -945,6 +945,11 @@ enum qca_wlan_vendor_attr_ll_stats_results
     /* Unsigned 32bit value to indicate ll stats result type */
     QCA_WLAN_VENDOR_ATTR_LL_STATS_TYPE,
 
+    /* u8 value representing the time slicing duty cycle percentage.
+        * Possible values are 0-100.
+        */
+    QCA_WLAN_VENDOR_ATTR_LL_STATS_IFACE_INFO_TS_DUTY_CYCLE = 87,
+
     /* keep last */
     QCA_WLAN_VENDOR_ATTR_LL_STATS_AFTER_LAST,
     QCA_WLAN_VENDOR_ATTR_LL_STATS_MAX   =
@@ -2118,6 +2123,29 @@ void wlan_hdd_cfg80211_scan_randomization_init(struct wiphy *wiphy)
 {
 }
 #endif
+
+#define JOINT_MULTI_BAND_RSNA 0x01
+#define PEER_KEY_ENABLED 0x02
+#define AMSDU_CAPABLE 0x04
+#define AMSDU_REQUIRED 0x08
+#define PBAC 0x10
+#define EXT_KEY_ID 0x20
+#define OCVC 0x40
+#define RESERVED 0x80
+
+/**
+ * wlan_hdd_mask_unsupported_rsn_caps() - Mask unsupported RSN CAPs in RSN IE
+ * @pBuf: pointer to rsn_ie
+ * @ielen: rsn_ie len
+ *
+ * This function is used to point rsn cap element in rsn IE and mask the rsn
+ * caps bits which driver doesn't support.
+ *
+ * Return: None
+ */
+void
+wlan_hdd_mask_unsupported_rsn_caps(tANI_U8 *pBuf, tANI_S16 ielen);
+
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 #define nla_parse(a, b, c, d, e) nla_parse(a, b, c, d, e, NULL)

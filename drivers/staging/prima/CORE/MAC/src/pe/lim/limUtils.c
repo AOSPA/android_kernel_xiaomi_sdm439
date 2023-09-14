@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -2689,19 +2690,16 @@ void limProcessChannelSwitchTimeout(tpAniSirGlobal pMac)
             return;
         }
 
-        /* If the channel-list that AP is asking us to switch is invalid,
-         * then we cannot switch the channel. Just disassociate from AP. 
-         * We will find a better AP !!!
-         */
-        if ((psessionEntry->limMlmState == eLIM_MLM_LINK_ESTABLISHED_STATE) &&
-           (psessionEntry->limSmeState != eLIM_SME_WT_DISASSOC_STATE)&&
-           (psessionEntry->limSmeState != eLIM_SME_WT_DEAUTH_STATE)) {
-              limLog(pMac, LOGE, FL("Invalid channel!! Disconnect.."));
-              limTearDownLinkWithAp(pMac,
-                        pMac->lim.limTimers.gLimChannelSwitchTimer.sessionId,
-                        eSIR_MAC_UNSPEC_FAILURE_REASON);
-        }
-        return;
+	/* The channel switch request received from AP is carrying
+	 * invalid channel. It's ok to ignore this channel switch
+	 * request as it might be from spoof AP. If it's from genuine
+	 * AP, it may lead to heart beat failure and result in
+	 * disconnection. DUT can go ahead and reconnect to it/any
+	 * other AP once it disconnects.
+	 */
+	limLog(pMac, LOGE, FL("Invalid channel %u Ignore CSA request"),
+	       channel);
+	return;
     }
     limCovertChannelScanType(pMac, psessionEntry->currentOperChannel, false);
     pMac->lim.dfschannelList.timeStamp[psessionEntry->currentOperChannel] = 0;
@@ -7173,6 +7171,19 @@ limPrepareFor11hChannelSwitch(tpAniSirGlobal pMac, tpPESession psessionEntry)
     else
     {
         PELOGE(limLog(pMac, LOGE, FL("Not in scan state, start channel switch timer"));)
+
+        /* Stop roam scan during CAC period in DFS channels */
+        if(limIsconnectedOnDFSChannel(
+                            psessionEntry->gLimChannelSwitch.primaryChannel)) {
+#ifdef WLAN_FEATURE_ROAM_SCAN_OFFLOAD
+            if (pMac->roam.configParam.isRoamOffloadScanEnabled) {
+               csrRoamOffloadScan(pMac, ROAM_SCAN_OFFLOAD_STOP,
+                                  REASON_DISCONNECTED);
+            }
+#endif
+        psessionEntry->gLimSpecMgmt.dfs_channel_csa = true;
+        }
+
         /** We are safe to switch channel at this point */
         limStopTxAndSwitchChannel(pMac, psessionEntry->peSessionId);
     }

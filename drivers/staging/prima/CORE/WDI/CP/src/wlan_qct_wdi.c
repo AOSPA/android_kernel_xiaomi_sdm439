@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -28672,6 +28673,7 @@ WDI_ProcessPrefNetworkFoundInd
   wdiInd.wdiIndicationData.wdiPrefNetworkFoundInd.rssi = pNetwFoundParams->rssi;
   wdiInd.wdiIndicationData.wdiPrefNetworkFoundInd.frameLength =
       pNetwFoundParams->frameLength;
+  wdiInd.wdiIndicationData.wdiPrefNetworkFoundInd.freq = pNetwFoundParams->freq;
   wpalMemoryCopy( wdiInd.wdiIndicationData.wdiPrefNetworkFoundInd.pData,
       (wpt_uint8 *)pEventData->pEventData + sizeof(tPrefNetwFoundParams),
       pNetwFoundParams->frameLength);
@@ -28681,12 +28683,13 @@ WDI_ProcessPrefNetworkFoundInd
 
   // DEBUG
   WPAL_TRACE( eWLAN_MODULE_DAL_CTRL,  eWLAN_PAL_TRACE_LEVEL_FATAL,
-              "[PNO WDI] PREF_NETWORK_FOUND_IND Type (%d) data (SSID=%.*s, LENGTH=%u,  RSSI=%u)",
+              "[PNO WDI] PREF_NETWORK_FOUND_IND Type (%d) data (SSID=%.*s, LENGTH=%u,  RSSI=%u FREQ=%d)",
               wdiInd.wdiIndicationType,
               wdiInd.wdiIndicationData.wdiPrefNetworkFoundInd.ssId.ucLength,
               wdiInd.wdiIndicationData.wdiPrefNetworkFoundInd.ssId.sSSID,
               wdiInd.wdiIndicationData.wdiPrefNetworkFoundInd.ssId.ucLength,
-              wdiInd.wdiIndicationData.wdiPrefNetworkFoundInd.rssi );
+              wdiInd.wdiIndicationData.wdiPrefNetworkFoundInd.rssi,
+              wdiInd.wdiIndicationData.wdiPrefNetworkFoundInd.freq);
 
   if ( pWDICtx->wdiLowLevelIndCB )
   {
@@ -31642,7 +31645,7 @@ void WDI_TransportChannelDebug
  @see
  @return none
 */
-void WDI_TransportKickDxe()
+void WDI_TransportKickDxe(void)
 {
    WDTS_ChannelKickDxe();
    return;
@@ -40192,10 +40195,11 @@ WDI_process_sw_pta_req(WDI_ControlBlockType *pWDICtx,
 	wdi_sw_pta_req = (struct wdi_sw_pta_req *)pEventData->pEventData;
 
 	hal_sw_pta_req = (tpHalSwPTAReq) (pSendBuffer + usDataOffset);;
-	hal_sw_pta_req->param_type = wdi_sw_pta_req->param_type;
-	hal_sw_pta_req->length = wdi_sw_pta_req->length;
-	memcpy(hal_sw_pta_req->value, wdi_sw_pta_req->value,
-	       wdi_sw_pta_req->length);
+	hal_sw_pta_req->bt_enabled = wdi_sw_pta_req->bt_enabled;
+	hal_sw_pta_req->bt_adv = wdi_sw_pta_req->bt_adv;
+	hal_sw_pta_req->ble_enabled = wdi_sw_pta_req->ble_enabled;
+	hal_sw_pta_req->bt_a2dp = wdi_sw_pta_req->bt_a2dp;
+	hal_sw_pta_req->bt_sco = wdi_sw_pta_req->bt_sco;
 
 	return WDI_SendMsg(pWDICtx, pSendBuffer, usSendSize,
 			   pEventData->pCBfnc, pEventData->pUserData,
