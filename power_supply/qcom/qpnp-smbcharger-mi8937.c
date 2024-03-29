@@ -7974,8 +7974,10 @@ static int smbchg_probe(struct platform_device *pdev)
 
 	chip->vchg_vadc_chan = iio_channel_get(&pdev->dev, "vchg_sns");
 	if (IS_ERR(chip->vchg_vadc_chan)) {
-		if (PTR_ERR(chip->vchg_vadc_chan) == -EPROBE_DEFER)
+		if (PTR_ERR(chip->vchg_vadc_chan) == -EPROBE_DEFER) {
+			dev_err(&pdev->dev, "vchg_sns channel is not available yet\n");
 			return -EPROBE_DEFER;
+		}
 		dev_err(&pdev->dev, "vchg_sns channel is not available\n");
 		chip->vchg_vadc_chan = NULL;
 	}
