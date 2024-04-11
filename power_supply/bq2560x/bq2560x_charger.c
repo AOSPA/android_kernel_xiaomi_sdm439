@@ -952,10 +952,10 @@ static int bq2560x_charger_get_property(struct power_supply *psy,
 		val->intval = bq->charge_enabled;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
-		val->intval = 3080;
+		val->intval = 3080000;
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_RIVA)
 		if (xiaomi_msm8937_mach_get() == XIAOMI_MSM8937_MACH_RIVA)
-			val->intval = 3000;
+			val->intval = 3000000;
 #endif
 		break;
 	

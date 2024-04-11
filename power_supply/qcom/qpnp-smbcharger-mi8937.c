@@ -6227,7 +6227,7 @@ static int smbchg_battery_get_property(struct power_supply *psy,
 		if (xiaomi_msm8937_mach_get() == XIAOMI_MSM8937_MACH_LAND ||
 			xiaomi_msm8937_mach_get() == XIAOMI_MSM8937_MACH_SANTONI ||
 			xiaomi_msm8937_mach_get() == XIAOMI_MSM8937_MACH_PRADA) {
-			val->intval = 4100;
+			val->intval = 4100000;
 			break;
 		}
 #endif
