@@ -1817,10 +1817,10 @@ static int smb358_battery_get_property(struct power_supply *psy,
 		val->intval = chip->therm_lvl_sel;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
-		val->intval = chip->fcc_mah;
+		val->intval = chip->fcc_mah * 1000;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_FULL:
-		val->intval = chip->fcc_mah;
+		val->intval = chip->fcc_mah * 1000;
 		break;
 	default:
 		return -EINVAL;

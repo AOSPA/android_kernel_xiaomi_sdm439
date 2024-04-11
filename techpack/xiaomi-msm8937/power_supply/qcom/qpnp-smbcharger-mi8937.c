@@ -5944,7 +5944,7 @@ static int smbchg_battery_get_property(struct power_supply *psy,
 		if (xiaomi_msm8937_mach_get() == XIAOMI_MSM8937_MACH_LAND ||
 			xiaomi_msm8937_mach_get() == XIAOMI_MSM8937_MACH_SANTONI ||
 			xiaomi_msm8937_mach_get() == XIAOMI_MSM8937_MACH_PRADA) {
-			val->intval = 4100;
+			val->intval = 4100000;
 			break;
 		}
 #endif
@@ -7974,8 +7974,10 @@ static int smbchg_probe(struct platform_device *pdev)
 
 	chip->vchg_vadc_chan = iio_channel_get(&pdev->dev, "vchg_sns");
 	if (IS_ERR(chip->vchg_vadc_chan)) {
-		if (PTR_ERR(chip->vchg_vadc_chan) == -EPROBE_DEFER)
+		if (PTR_ERR(chip->vchg_vadc_chan) == -EPROBE_DEFER) {
+			dev_err(&pdev->dev, "vchg_sns channel is not available yet\n");
 			return -EPROBE_DEFER;
+		}
 		dev_err(&pdev->dev, "vchg_sns channel is not available\n");
 		chip->vchg_vadc_chan = NULL;
 	}
