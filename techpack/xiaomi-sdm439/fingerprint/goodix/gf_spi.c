@@ -57,8 +57,6 @@
 #define VER_MINOR   2
 #define PATCH_LEVEL 11
 
-#define WAKELOCK_HOLD_TIME 500 /* in ms */
-
 #define GF_SPIDEV_NAME     "goodix,fingerprint"
 /*device name after register in charater*/
 #define GF_DEV_NAME            "goodix_fp"
@@ -321,7 +319,7 @@ static irqreturn_t gf_irq(int irq, void *handle)
 #if defined(GF_NETLINK_ENABLE)
 	char msg = GF_NET_EVENT_IRQ;
 	struct gf_dev *gf_dev = &gf;
-	__pm_wakeup_event(gf_dev->fp_wakesrc, WAKELOCK_HOLD_TIME);
+	pm_wakeup_hard_event(&gf_dev->input->dev);
 	sendnlmsg(&msg);
 #elif defined(GF_FASYNC)
 	struct gf_dev *gf_dev = &gf;
@@ -774,7 +772,7 @@ static int gf_probe(struct platform_device *pdev)
 	gf_dev->notifier = goodix_noti_block;
 	fb_register_client(&gf_dev->notifier);
 
-        gf_dev->fp_wakesrc = wakeup_source_register(NULL, "fp_wakesrc");
+	device_init_wakeup(&gf_dev->input->dev, 1);
 
 	pr_info("version V%d.%d.%02d\n", VER_MAJOR, VER_MINOR, PATCH_LEVEL);
 printk("gf probe success\n");
@@ -812,7 +810,7 @@ static int gf_remove(struct platform_device *pdev)
 {
 	struct gf_dev *gf_dev = &gf;
 
-	wakeup_source_unregister(gf_dev->fp_wakesrc);
+	device_init_wakeup(&gf_dev->input->dev, 0);
 	fb_unregister_client(&gf_dev->notifier);
 	if (gf_dev->input)
 		input_unregister_device(gf_dev->input);
