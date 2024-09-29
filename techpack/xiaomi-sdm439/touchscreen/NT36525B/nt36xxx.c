@@ -96,14 +96,19 @@ static void nvt_ts_late_resume(struct early_suspend *h);
 
 static int32_t nvt_ts_resume(struct device *dev);
 
-#define NVT_RESUME_EN                    0
+#define NVT_RESUME_EN                    1
 /************************************************************************
 * Name: create reusme workqueue
 * Brief: put resume period into workqueue
 * Date: Add by HQ-102007757 [Date: 2019-6-13]
 ***********************************************************************/
 #if NVT_RESUME_EN
-#define NVT_RESUME_WAIT_TIME             20
+#define NVT_RESUME_WAIT_TIME             10 /* in ms avoid race condition with display reset(RESX) sequence and mipi dsi cmds */
+
+#if WAKEUP_GESTURE
+uint8_t is_wake_gesture_sent = 0;
+uint8_t nvt_gesture_flag;
+#endif
 
 static struct delayed_work nvt_resume_work;
 static struct workqueue_struct *nvt_resume_workqueue;
@@ -118,7 +123,7 @@ static void nvt_resume_func(struct work_struct *work)
 
 void nvt_resume_queue_work(void)
 {
-	cancel_delayed_work(&nvt_resume_work);
+	cancel_delayed_work_sync(&nvt_resume_work);
 	queue_delayed_work(nvt_resume_workqueue, &nvt_resume_work, msecs_to_jiffies(NVT_RESUME_WAIT_TIME));
 }
 
@@ -137,6 +142,7 @@ int nvt_resume_init(void)
 
 int nvt_resume_exit(void)
 {
+	cancel_delayed_work_sync(&nvt_resume_work);
 	destroy_workqueue(nvt_resume_workqueue);
 
 	return 0;
@@ -207,8 +213,7 @@ const struct mtk_chip_config spi_ctrdata = {
 };
 #endif
 
-//static uint8_t bTouchIsAwake = 0;
-uint8_t bTouchIsAwake ;
+uint8_t bTouchIsAwake;
 
 
 /*******************************************************
@@ -961,6 +966,7 @@ static void nvt_flash_proc_deinit(void)
 #endif
 
 #if WAKEUP_GESTURE
+#define GESTURE_AWAKE           0
 #define GESTURE_WORD_C          12
 #define GESTURE_WORD_W          13
 #define GESTURE_WORD_V          14
@@ -1016,6 +1022,7 @@ void nvt_ts_wakeup_gesture_report(uint8_t gesture_id, uint8_t *data)
 			NVT_LOG("Gesture : Word-V.\n");
 			keycode = gesture_key_array[2];
 			break;
+	case GESTURE_AWAKE:
 	case GESTURE_DOUBLE_CLICK:
 			NVT_LOG("Gesture : Double Click.\n");
 			keycode = gesture_key_array[3];
@@ -1061,6 +1068,8 @@ void nvt_ts_wakeup_gesture_report(uint8_t gesture_id, uint8_t *data)
 	}
 
 	if (keycode > 0) {
+		pm_wakeup_hard_event(&ts->input_dev->dev);
+		is_wake_gesture_sent = 1;
 		input_report_key(ts->input_dev, keycode, 1);
 		input_sync(ts->input_dev);
 		input_report_key(ts->input_dev, keycode, 0);
@@ -1296,7 +1305,7 @@ Description:
 return:
 	n.a.
 *******************************************************/
-int nvt_gesture_flag;
+
 static irqreturn_t nvt_ts_work_func(int irq, void *data)
 {
 	int32_t ret = -1;
@@ -1312,14 +1321,21 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 #endif /* MT_PROTOCOL_B */
 	int32_t i = 0;
 	int32_t finger_cnt = 0;
-	uint8_t buf[4] = {0};
-#if WAKEUP_GESTURE
-	if (bTouchIsAwake == 0) {
-		pm_wakeup_event(&ts->input_dev->dev, 5000);
-	}
-#endif
 
 	mutex_lock(&ts->lock);
+
+	input_id = (uint8_t)(point_data[1] >> 3);
+
+#if WAKEUP_GESTURE
+	if (bTouchIsAwake == 0 && nvt_gesture_flag == 1) {
+		// only sent gesture once
+		if (is_wake_gesture_sent == 0)
+			nvt_ts_wakeup_gesture_report(input_id, point_data);
+
+		mutex_unlock(&ts->lock);
+		return IRQ_HANDLED;
+	}
+#endif
 
 	ret = CTP_SPI_READ(ts->client, point_data, POINT_DATA_LEN + 1);
 	if (ret < 0) {
@@ -1339,12 +1355,6 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
    if (nvt_wdt_fw_recovery(point_data)) {
        NVT_ERR("Recover for fw reset, %02X\n", point_data[1]);
        nvt_update_firmware(BOOT_UPDATE_FIRMWARE_NAME);
-	   if (bTouchIsAwake == 0 && nvt_gesture_flag == 1) {
-		buf[0] = EVENT_MAP_HOST_CMD;
-		buf[1] = 0x13;
-		CTP_SPI_WRITE(ts->client, buf, 2);
-		NVT_LOG("Enabled touch wakeup gesture\n");
-	}
 	   goto XFER_ERROR;
    }
 #endif /* #if NVT_TOUCH_WDT_RECOVERY */
@@ -1357,20 +1367,9 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 	}
 #endif /* #if NVT_TOUCH_ESD_PROTECT */
 
-	input_id = (uint8_t)(point_data[1] >> 3);
-
 	if (nvt_check_palm(input_id, point_data)) {
 		goto XFER_ERROR; // to skip point data parsing
 	}
-
-#if WAKEUP_GESTURE
-	if (bTouchIsAwake == 0) {
-		//input_id = (uint8_t)(point_data[1] >> 3);
-		nvt_ts_wakeup_gesture_report(input_id, point_data);
-		mutex_unlock(&ts->lock);
-		return IRQ_HANDLED;
-	}
-#endif
 
 	finger_cnt = 0;
 
@@ -1546,10 +1545,16 @@ out:
 static int nt36525b_mi439_ops_enable_dt2w(bool enable)
 {
 #if WAKEUP_GESTURE
+	mutex_lock(&ts->lock);
+	// dont allow change if ts in gesture sleep mode
+	if (!bTouchIsAwake && nvt_gesture_flag) {
+		mutex_unlock(&ts->lock);
+		return 0;
+	}
 	nvt_gesture_flag = enable;
 	NVT_LOG("gesture enabled:%d", nvt_gesture_flag);
+	mutex_unlock(&ts->lock);
 #endif
-
 	return 0;
 }
 
@@ -1563,6 +1568,12 @@ static struct xiaomi_sdm439_touchscreen_operations_t nt36525b_mi439_ts_ops = {
 
 int nvt_gesture_switch(struct input_dev *dev, unsigned int type, unsigned int code, int value)
 {
+	mutex_lock(&ts->lock);
+	// dont allow change if ts in gesture sleep mode
+	if (!bTouchIsAwake && nvt_gesture_flag) {
+		mutex_unlock(&ts->lock);
+		return 0;
+	}
 	if (type == EV_SYN && code == SYN_CONFIG) {
 		if (value == WAKEUP_OFF) {
 			nvt_gesture_flag = false;
@@ -1572,6 +1583,8 @@ int nvt_gesture_switch(struct input_dev *dev, unsigned int type, unsigned int co
 			NVT_LOG("gesture enabled:%d", nvt_gesture_flag);
 		}
 	}
+	mutex_unlock(&ts->lock);
+
 	return 0;
 }
 
@@ -2012,6 +2025,10 @@ static int32_t nvt_ts_remove(struct spi_device *client)
 	}
 #endif
 
+#if NVT_RESUME_EN
+	nvt_resume_exit();
+#endif
+
 #if WAKEUP_GESTURE
 	device_init_wakeup(&ts->input_dev->dev, 0);
 #endif
@@ -2101,16 +2118,24 @@ return:
 *******************************************************/
 static int32_t nvt_ts_suspend(struct device *dev)
 {
+#if NVT_RESUME_EN
+	cancel_delayed_work_sync(&nvt_resume_work);
+#endif
+
 	uint8_t buf[4] = {0};
 #if MT_PROTOCOL_B
 	uint32_t i = 0;
 #endif
 
+	mutex_lock(&ts->lock);
+
 	if (!bTouchIsAwake) {
 		NVT_LOG("Touch is already suspend\n");
+		mutex_unlock(&ts->lock);
 		return 0;
 	}
 
+	bTouchIsAwake = 0;
 #if WAKEUP_GESTURE
 	if (nvt_gesture_flag == 1) {
 		// do nothing
@@ -2127,11 +2152,7 @@ static int32_t nvt_ts_suspend(struct device *dev)
 	nvt_esd_check_enable(false);
 #endif /* #if NVT_TOUCH_ESD_PROTECT */
 
-	mutex_lock(&ts->lock);
-
 	NVT_LOG("start\n");
-
-	bTouchIsAwake = 0;
 
 #if WAKEUP_GESTURE
 	//---write command to enter "wakeup gesture mode"---
@@ -2157,8 +2178,6 @@ static int32_t nvt_ts_suspend(struct device *dev)
 	CTP_SPI_WRITE(ts->client, buf, 2);
 #endif // WAKEUP_GESTURE
 
-	mutex_unlock(&ts->lock);
-
 	/* release all touches */
 #if MT_PROTOCOL_B
 	for (i = 0; i < ts->max_touch_num; i++) {
@@ -2178,6 +2197,8 @@ static int32_t nvt_ts_suspend(struct device *dev)
 
 	NVT_LOG("end\n");
 
+	mutex_unlock(&ts->lock);
+
 	return 0;
 }
 
@@ -2190,12 +2211,17 @@ return:
 *******************************************************/
 static int32_t nvt_ts_resume(struct device *dev)
 {
+
+	mutex_lock(&ts->lock);
+
 	if (bTouchIsAwake) {
 		NVT_LOG("Touch is already resume\n");
+		mutex_unlock(&ts->lock);
 		return 0;
 	}
 
-	mutex_lock(&ts->lock);
+	bTouchIsAwake = 1;
+	is_wake_gesture_sent = 0;
 
 	NVT_LOG("start\n");
 
@@ -2225,11 +2251,9 @@ static int32_t nvt_ts_resume(struct device *dev)
 			msecs_to_jiffies(NVT_TOUCH_ESD_CHECK_PERIOD));
 #endif /* #if NVT_TOUCH_ESD_PROTECT */
 
-	bTouchIsAwake = 1;
+	NVT_LOG("end\n");
 
 	mutex_unlock(&ts->lock);
-
-	NVT_LOG("end\n");
 
 	return 0;
 }
@@ -2257,7 +2281,11 @@ static int nvt_drm_notifier_callback(struct notifier_block *self, unsigned long 
 		} else if (event == MSM_DRM_EVENT_BLANK) {
 			if (*blank == MSM_DRM_BLANK_UNBLANK) {
 				NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
+#if NVT_RESUME_EN
+				nvt_resume_queue_work();
+#else
 				nvt_ts_resume(&ts->client->dev);
+#endif
 			}
 		}
 	}
@@ -2272,7 +2300,7 @@ static int nvt_fb_notifier_callback(struct notifier_block *self, unsigned long e
 	struct nvt_ts_data *ts =
 		container_of(self, struct nvt_ts_data, fb_notif);
 
-	NVT_LOG("Enter %s", __func__);
+	//NVT_LOG("Enter %s", __func__);
 
 #ifdef FACTORY_VERSION_ENABLE
 	if (strnstr(saved_command_line, "androidboot.mode=ffbm-01", strlen(saved_command_line))) {
@@ -2281,7 +2309,11 @@ static int nvt_fb_notifier_callback(struct notifier_block *self, unsigned long e
 			nvt_ts_suspend(&ts->client->dev);
 		} else if (evdata && event == FB_EVENT_RESUME) {
 			NVT_LOG("We are in ffbm-01 mode,event=%lu\n", event);
-			nvt_ts_resume(&ts->client->dev);
+#if NVT_RESUME_EN
+				nvt_resume_queue_work();
+#else
+				nvt_ts_resume(&ts->client->dev);
+#endif
 		}
 		return 0;
 	}
@@ -2302,10 +2334,9 @@ static int nvt_fb_notifier_callback(struct notifier_block *self, unsigned long e
 #else
 			nvt_ts_resume(&ts->client->dev);
 #endif
-
-	NVT_LOG("Exit %s", __func__);
 		}
 	}
+	NVT_LOG("Exit %s", __func__);
 
 	return 0;
 }
